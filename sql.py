@@ -47,4 +47,55 @@ def isVulnerable(response):
     }
     for error in errors:
         if error in response.content.decode().lower():
+            return True
+
+    return False
+
+def scannSqlInjection(url):
+
+    for c in "\"'": 
+        newUrl = f"{url}{c}"
+        print("[!]tentando", newUrl)
+        res = s.get(newUrl)
+        if(isVulnerable(res)):
+            print("[+] SQL Injection Vulneravel")
+            return
+    forms = getAllForms(url)
+    print(f"[+] Detectado {len(forms)} forms na url {url}")    
+    for form in forms:
+        formDetails = getFormDetails(form)
+        for c in "\"'":
+            data = {}
+            for inputTag in formDetails["inputs"]:
+                if inputTag["type"] == "hidden" or inputTag["value"]:
+                    try:
+                        data[inputTag["name"]] = inputTag["value"] + c
+                    
+                    except:
+                        pass
+                elif inputTag["type"] != "submit": 
+                    data[inputTag["name"]] = f"teste{c}"
+            
+            url = urljoin(url, formDetails["action"])
+
+            if formDetails["method"] == "post":
+                res = s.post(url, data = data)
+
+            elif formDetails["method"] == "get":
+
+                res = s.get(url, params=data)
+            
+            if isVulnerable(res):
+
+                print("[!] SQL Injection vulneravel para a url", url)
+                print("[+] Forms")
+                pprint(formDetails)
+                break
+
+
+if __name__ == "__main__":
+
+    url = "http://testphp.vulnweb.com/search.php?test=query"
+    scannSqlInjection(url)
+
 
