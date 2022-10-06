@@ -95,7 +95,5 @@ def scannSqlInjection(url):
 
 if __name__ == "__main__":
 
-    url = "http://testphp.vulnweb.com/search.php?test=query"
+    url = "https://www.kabum.com.br/busca?test=query"
     scannSqlInjection(url)
-
-
