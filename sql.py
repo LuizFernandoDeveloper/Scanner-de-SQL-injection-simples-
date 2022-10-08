@@ -1,41 +1,47 @@
 import requests
-from bs4 import BeautifulSoup as bs 
-from urllib.parse import urljoin 
+from bs4 import BeautifulSoup as bs
+from urllib.parse import urljoin
 from pprint import pprint
 
+# initialize an HTTP session & set the browser
 s = requests.Session()
-s.headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36"
+s.headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.106 Safari/537.36"
 
-
-def getAllForms(url):
-    soup = bs(s.get(url).content, "html.parse")
+def get_all_forms(url):
+    """Given a `url`, it returns all forms from the HTML content"""
+    soup = bs(s.get(url).content, "html.parser")
     return soup.find_all("form")
 
-def getFormDetails(form):
+
+def get_form_details(form):
+    """
+    This function extracts all possible useful information about an HTML `form`
+    """
     details = {}
+    # get the form action (target url)
     try:
         action = form.attrs.get("action").lower()
-
     except:
-        action = None 
-
-    method = form.attrs.get("mewthod", "get").lower()
-
-    inputs= []
-
-    for inputTag in form.find_all("input"):
-        inputType = inputTag.attrs.get("type", "text") 
-        inputName = inputTag.atrrs.get("name")
-        inputValue  = inputTag.attrs.get("value", "")
-        inputs.append({"type":inputType, "name": inputName, "value": inputValue})  
-    details["action"] = action 
-    details["method"] = method 
-    details["input"] = inputs 
+        action = None
+    # get the form method (POST, GET, etc.)
+    method = form.attrs.get("method", "get").lower()
+    # get all the input details such as type and name
+    inputs = []
+    for input_tag in form.find_all("input"):
+        input_type = input_tag.attrs.get("type", "text")
+        input_name = input_tag.attrs.get("name")
+        input_value = input_tag.attrs.get("value", "")
+        inputs.append({"type": input_type, "name": input_name, "value": input_value})
+    # put everything to the resulting dictionary
+    details["action"] = action
+    details["method"] = method
+    details["inputs"] = inputs
     return details
 
-def isVulnerable(response):
+def is_vulnerable(response):
+    """A simple boolean function that determines whether a page 
+    is SQL Injection vulnerable from its `response`"""
     errors = {
-
         # MySQL
         "you have an error in your sql syntax;",
         "warning: mysql",
@@ -43,57 +49,59 @@ def isVulnerable(response):
         "unclosed quotation mark after the character string",
         # Oracle
         "quoted string not properly terminated",
-
     }
     for error in errors:
+        # if you find one of these errors, return True
         if error in response.content.decode().lower():
             return True
-
+    # no error detected
     return False
 
-def scannSqlInjection(url):
-
-    for c in "\"'": 
-        newUrl = f"{url}{c}"
-        print("[!]tentando", newUrl)
-        res = s.get(newUrl)
-        if(isVulnerable(res)):
-            print("[+] SQL Injection Vulneravel")
+def scan_sql_injection(url):
+    # test on URL
+    for c in "\"'":
+        # add quote/double quote character to the URL
+        new_url = f"{url}{c}"
+        print("[!] Trying", new_url)
+        # make the HTTP request
+        res = s.get(new_url)
+        if is_vulnerable(res):
+            # SQL Injection detected on the URL itself, 
+            # no need to preceed for extracting forms and submitting them
+            print("[+] SQL Injection vulnerability detected, link:", new_url)
             return
-    forms = getAllForms(url)
-    print(f"[+] Detectado {len(forms)} forms na url {url}")    
+    # test on HTML forms
+    forms = get_all_forms(url)
+    print(f"[+] Detected {len(forms)} forms on {url}.")
     for form in forms:
-        formDetails = getFormDetails(form)
+        form_details = get_form_details(form)
         for c in "\"'":
+            # the data body we want to submit
             data = {}
-            for inputTag in formDetails["inputs"]:
-                if inputTag["type"] == "hidden" or inputTag["value"]:
+            for input_tag in form_details["inputs"]:
+                if input_tag["type"] == "hidden" or input_tag["value"]:
+                    # any input form that is hidden or has some value,
+                    # just use it in the form body
                     try:
-                        data[inputTag["name"]] = inputTag["value"] + c
-                    
+                        data[input_tag["name"]] = input_tag["value"] + c
                     except:
                         pass
-                elif inputTag["type"] != "submit": 
-                    data[inputTag["name"]] = f"teste{c}"
-            
-            url = urljoin(url, formDetails["action"])
-
-            if formDetails["method"] == "post":
-                res = s.post(url, data = data)
-
-            elif formDetails["method"] == "get":
-
+                elif input_tag["type"] != "submit":
+                    # all others except submit, use some junk data with special character
+                    data[input_tag["name"]] = f"test{c}"
+            # join the url with the action (form request URL)
+            url = urljoin(url, form_details["action"])
+            if form_details["method"] == "post":
+                res = s.post(url, data=data)
+            elif form_details["method"] == "get":
                 res = s.get(url, params=data)
-            
-            if isVulnerable(res):
-
-                print("[!] SQL Injection vulneravel para a url", url)
-                print("[+] Forms")
-                pprint(formDetails)
+            # test whether the resulting page is vulnerable
+            if is_vulnerable(res):
+                print("[+] SQL Injection vulnerability detected, link:", url)
+                print("[+] Form:")
+                pprint(form_details)
                 break
 
-
 if __name__ == "__main__":
-
-    url = "https://www.kabum.com.br/busca?test=query"
-    scannSqlInjection(url)
+    url = "http://testphp.vulnweb.com/search.php?test=query"
+    scan_sql_injection(url)
